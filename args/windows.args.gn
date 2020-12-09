@@ -11,4 +11,8 @@ pdf_enable_v8 = false
 pdf_enable_xfa = false
 
 # Enable experimental win32 GDI APIs.
-pdf_use_win32_gdi = true
+#pdf_use_win32_gdi = true
+
+# Generate a 32-bit version
+target_cpu = "x86"
+is_debug = false

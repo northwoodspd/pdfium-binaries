@@ -1,0 +1,138 @@
+diff --git a/BUILD.gn b/BUILD.gn
+index 72fcb2a81..7da9dc4bf 100644
+--- a/BUILD.gn
++++ b/BUILD.gn
+@@ -17,10 +17,11 @@ group("freetype_common") {
+ config("pdfium_common_config") {
+   cflags = []
+   ldflags = []
+-  include_dirs = [ "." ]
++  include_dirs = [ ".", "v8/include" ]
+   defines = [
+     "PNG_PREFIX",
+     "PNG_USE_READ_MACROS",
++    "FPDFSDK_EXPORTS"
+   ]
+ 
+   if (!use_system_libopenjpeg2) {
+diff --git a/fpdfsdk/BUILD.gn b/fpdfsdk/BUILD.gn
+index 20a925a72..33db605a8 100644
+--- a/fpdfsdk/BUILD.gn
++++ b/fpdfsdk/BUILD.gn
+@@ -70,6 +70,7 @@ source_set("fpdfsdk") {
+     "fpdf_transformpage.cpp",
+     "fpdf_view.cpp",
+     "ipdfsdk_annothandler.h",
++    "pdfiumviewer.cpp"
+   ]
+ 
+   configs += [ "../:pdfium_core_config" ]
+diff --git a/fpdfsdk/pdfiumviewer.cpp b/fpdfsdk/pdfiumviewer.cpp
+new file mode 100644
+index 000000000..3e7c4cebf
+--- /dev/null
++++ b/fpdfsdk/pdfiumviewer.cpp
+@@ -0,0 +1,102 @@
++// Copyright (c) 2015 Pieter van Ginkel. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "public/fpdfview.h"
++#if PDF_ENABLE_V8
++#include "v8/include/v8.h"
++#include "v8/include/libplatform/libplatform.h"
++#endif // PDF_ENABLE_V8
++
++extern "C"
++{
++	FPDF_EXPORT void FPDF_CALLCONV FPDF_AddRef();
++	FPDF_EXPORT void FPDF_CALLCONV FPDF_Release();
++}
++
++class RefCounter
++{
++private:
++	CRITICAL_SECTION cs;
++	int refCount;
++#if PDF_ENABLE_V8
++	v8::Platform* platform;
++#endif // PDF_ENABLE_V8
++
++public:
++	RefCounter()
++	{
++		::InitializeCriticalSection(&cs);
++		refCount = 0;
++#if PDF_ENABLE_V8
++		platform = NULL;
++#endif // PDF_ENABLE_V8
++	}
++
++	~RefCounter()
++	{
++		::DeleteCriticalSection(&cs);
++	}
++
++	void Enter()
++	{
++		::EnterCriticalSection(&cs);
++	}
++
++	void Leave()
++	{
++		::LeaveCriticalSection(&cs);
++	}
++
++	void AddRef()
++	{
++		::EnterCriticalSection(&cs);
++
++		if (refCount == 0)
++		{
++#if PDF_ENABLE_V8
++			v8::V8::InitializeICU();
++			platform = v8::platform::CreateDefaultPlatform();
++			v8::V8::InitializePlatform(platform);
++			v8::V8::Initialize();
++#endif // PDF_ENABLE_V8
++
++			FPDF_InitLibrary();
++		}
++
++		refCount++;
++
++		::LeaveCriticalSection(&cs);
++	}
++
++	void Release()
++	{
++		::EnterCriticalSection(&cs);
++
++		refCount--;
++
++		if (refCount == 0)
++		{
++			FPDF_DestroyLibrary();
++#if PDF_ENABLE_V8
++			v8::V8::ShutdownPlatform();
++			delete platform;
++#endif // PDF_ENABLE_V8
++		}
++
++		::LeaveCriticalSection(&cs);
++	}
++};
++
++static RefCounter refCounter;
++
++
++FPDF_EXPORT void FPDF_CALLCONV FPDF_AddRef()
++{
++	refCounter.AddRef();
++}
++
++FPDF_EXPORT void FPDF_CALLCONV FPDF_Release()
++{
++	refCounter.Release();
++}
+\ No newline at end of file
