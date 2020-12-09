@@ -15,3 +15,4 @@ pdf_enable_xfa = false
 
 # Generate a 32-bit version
 target_cpu = "x86"
+is_debug = false
